@@ -8,6 +8,8 @@
     - Data Collection: Gather a dataset of smart contracts with known vulnerabilities
         - etherscan contract API 
         - https://etherscan.io/apis
+        - https://etherscan.io/contractsVerified
+        - https://docs.etherscan.io/api-endpoints/contracts 
         - to do: create an etherscan api account, get an api key, start pulling etherscan data from the api, clean data so we have what we need for the ML vulnerability detection model 
     - Machine Learning Model: Train a model to identify vulnerabilities in smart contract code
    
