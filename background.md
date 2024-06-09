@@ -6,6 +6,9 @@
 - pros: verifiable, fast, direct, on chain 
 - cons: have vulnerabilities that lead to security breaches + financial losses
 
+# basic definitions 
+- gas: fee required to successfully conduct a transaction or execute a contract on the eth blockchain platform
+
 
 
 # more reading 
