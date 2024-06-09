@@ -1,19 +1,19 @@
-# ghw - smart contract vulnerability detection part one
+# ghw - smart contract vulnerability detection tools part one
 
 ## check in w/ mlh 
 - bit.ly/scvd1
 
-## goal: system that uses machine learning (ML) to detect vulnerabilities in smart contracts
-- Components: 
-    - Data Collection: Gather a dataset of smart contracts with known vulnerabilities
-        - etherscan contract API 
-        - https://etherscan.io/apis
-        - https://etherscan.io/contractsVerified
-        - https://docs.etherscan.io/api-endpoints/contracts 
-        - to do: create an etherscan api account, get an api key, start pulling etherscan data from the api, clean data so we have what we need for the ML vulnerability detection model 
-    - Machine Learning Model: Train a model to identify vulnerabilities in smart contract code
-   
+## goal: utilize python libraries to find vulberabilities in smart contracts in the etherscan api 
+- follow the slither tutorial + verify its accuracy by first using the the contracts in the ScrawID repo (can find the smart contracts in the etherscan search contract site)
 
 
-## reference the code we worked on 
+
+
+## reference the code we worked on + other resources 
 - bit.ly/scvd-code
+
+- https://github.com/sujeetc/ScrawlD/tree/main
+- https://github.com/crytic/slither?tab=readme-ov-file#how-to-install
+- https://etherscan.io/searchcontract
+
+

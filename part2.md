@@ -1,4 +1,4 @@
-# ghw - smart contract vulnerability detection part two
+# ghw - smart contract vulnerability detection tools part two
 
 
 ## check in w/ mlh 
