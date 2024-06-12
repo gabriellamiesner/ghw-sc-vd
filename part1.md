@@ -16,7 +16,7 @@ examples of vulnerabilities we detected:
 - to run slither: slither [name of solidity file] 
 
 - test.sol -> severe vulnerabiliy = Unchecked transfer -> solution = SafeERC20
-- test3.sol -> severe vulnerabilities = Unchecked transfer, Array Length 
+- test2.sol -> severe vulnerabilities = Unchecked transfer, Array Length 
         medium vulnerabilities = division before multiplication, dangerous strict equalities can lead to infinite loop (and potentially infinite loss); contracts that lock eth (dont create locked contracts w/o thinking it thru like an engineer - basically asking questions on all of the possible needed functions/methods), re-entrancy on multiple fronts (can lead to infinite money loss glitch)
 
 

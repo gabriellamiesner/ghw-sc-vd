@@ -1,608 +1,944 @@
 /**
- *Submitted for verification at Etherscan.io on 2018-02-28
+ *Submitted for verification at Etherscan.io on 2018-04-17
 */
 
-pragma solidity ^0.4.20;// blaze it
+pragma solidity ^0.4.20;
 
-interface ERC20 {
-    function totalSupply() external constant returns (uint supply);
-    function balanceOf(address _owner) external constant returns (uint balance);
-    function transfer(address _to, uint _value) external returns (bool success);
-    function transferFrom(address _from, address _to, uint _value) external returns (bool success);
-    function approve(address _spender, uint _value) external returns (bool success);
-    function allowance(address _owner, address _spender) external constant returns (uint remaining);
-    event Transfer(address indexed _from, address indexed _to, uint _value);
-    event Approval(address indexed _owner, address indexed _spender, uint _value);
-}
-contract TokenRescue {
-    // use this method to rescue your tokens if you sent them by mistake but be quick or someone else will get them
-    function rescueToken(ERC20 _token)
-    external
-    {
-        _token.transfer(msg.sender, _token.balanceOf(this));
-    }
-    // require data for transactions
-    function() external payable {
-        revert();
-    }
-}
-interface AccountRegistryInterface {
-    function canVoteOnProposal(address _voter, address _proposal) external view returns (bool);
-}
-contract Vote is ERC20, TokenRescue {
-    uint256 supply = 0;
-    AccountRegistryInterface public accountRegistry = AccountRegistryInterface(0x000000002bb43c83eCe652d161ad0fa862129A2C);
-    address public owner = 0x4a6f6B9fF1fc974096f9063a45Fd12bD5B928AD1;
-
-    uint8 public constant decimals = 1;
-    string public symbol = "FV";
-    string public name = "FinneyVote";
-
-    mapping (address => uint256) balances;
-    mapping (address => mapping (address => uint256)) approved;
-
-    function totalSupply() external constant returns (uint256) {
-        return supply;
-    }
-    function balanceOf(address _owner) external constant returns (uint256) {
-        return balances[_owner];
-    }
-    function approve(address _spender, uint256 _value) external returns (bool) {
-        approved[msg.sender][_spender] = _value;
-        Approval(msg.sender, _spender, _value);
-        return true;
-    }
-    function allowance(address _owner, address _spender) external constant returns (uint256) {
-        return approved[_owner][_spender];
-    }
-    function transfer(address _to, uint256 _value) external returns (bool) {
-        if (balances[msg.sender] < _value) {
-            return false;
+/**
+ * @title SafeMath
+ * @dev Math operations with safety checks that throw on error
+ */
+library SafeMath {
+    function mul(uint256 a, uint256 b) internal pure returns (uint256) {
+        if (a == 0) {
+            return 0;
         }
-        balances[msg.sender] -= _value;
-        balances[_to] += _value;
+        uint256 c = a * b;
+        assert(c / a == b);
+        return c;
+    }
+
+    function div(uint256 a, uint256 b) internal pure returns (uint256) {
+        // assert(b > 0); // Solidity automatically throws when dividing by 0
+        uint256 c = a / b;
+        // assert(a == b * c + a % b); // There is no case in which this doesn't hold
+        return c;
+    }
+
+    function sub(uint256 a, uint256 b) internal pure returns (uint256) {
+        assert(b <= a);
+        return a - b;
+    }
+
+    function add(uint256 a, uint256 b) internal pure returns (uint256) {
+        uint256 c = a + b;
+        assert(c >= a);
+        return c;
+    }
+}
+
+/**
+ * @title ERC20Basic
+ * @dev Simpler version of ERC20 interface
+ * @dev see https://github.com/ethereum/EIPs/issues/179
+ */
+contract ERC20Basic {
+    uint256 public totalSupply;
+
+    function balanceOf(address who) public view returns (uint256);
+
+    function transfer(address to, uint256 value) public returns (bool);
+
+    event Transfer(address indexed from, address indexed to, uint256 value);
+}
+
+
+/**
+ * @title ERC20 interface
+ * @dev see https://github.com/ethereum/EIPs/issues/20
+ */
+contract ERC20 is ERC20Basic {
+    function allowance(address owner, address spender) public view returns (uint256);
+
+    function transferFrom(address from, address to, uint256 value) public returns (bool);
+
+    function approve(address spender, uint256 value) public returns (bool);
+
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+}
+
+contract ShortAddressProtection {
+
+    modifier onlyPayloadSize(uint256 numwords) {
+        assert(msg.data.length >= numwords * 32 + 4);
+        _;
+    }
+}
+
+/**
+ * @title Basic token
+ * @dev Basic version of StandardToken, with no allowances.
+ */
+contract BasicToken is ERC20Basic, ShortAddressProtection {
+    using SafeMath for uint256;
+
+    mapping(address => uint256) internal balances;
+
+    /**
+    * @dev transfer token for a specified address
+    * @param _to The address to transfer to.
+    * @param _value The amount to be transferred.
+    */
+    function transfer(address _to, uint256 _value) onlyPayloadSize(2) public returns (bool) {
+        require(_to != address(0));
+        require(_value <= balances[msg.sender]);
+
+        // SafeMath.sub will throw if there is not enough balance.
+        balances[msg.sender] = balances[msg.sender].sub(_value);
+        balances[_to] = balances[_to].add(_value);
         Transfer(msg.sender, _to, _value);
         return true;
     }
-    function transferFrom(address _from, address _to, uint256 _value) external returns (bool) {
-        if (balances[_from] < _value
-         || approved[_from][msg.sender] < _value
-         || _value == 0) {
-            return false;
-        }
-        approved[_from][msg.sender] -= _value;
-        balances[_from] -= _value;
-        balances[_to] += _value;
+
+    /**
+    * @dev Gets the balance of the specified address.
+    * @param _owner The address to query the the balance of.
+    * @return An uint256 representing the amount owned by the passed address.
+    */
+    function balanceOf(address _owner) public view returns (uint256 balance) {
+        return balances[_owner];
+    }
+
+}
+
+/**
+ * @title Standard ERC20 token
+ *
+ * @dev Implementation of the basic standard token.
+ * @dev https://github.com/ethereum/EIPs/issues/20
+ * @dev Based on code by FirstBlood: https://github.com/Firstbloodio/token/blob/master/smart_contract/FirstBloodToken.sol
+ */
+contract StandardToken is ERC20, BasicToken {
+
+    mapping(address => mapping(address => uint256)) internal allowed;
+
+
+    /**
+     * @dev Transfer tokens from one address to another
+     * @param _from address The address which you want to send tokens from
+     * @param _to address The address which you want to transfer to
+     * @param _value uint256 the amount of tokens to be transferred
+     */
+    function transferFrom(address _from, address _to, uint256 _value) onlyPayloadSize(3) public returns (bool) {
+        require(_to != address(0));
+        require(_value <= balances[_from]);
+        require(_value <= allowed[_from][msg.sender]);
+
+        balances[_from] = balances[_from].sub(_value);
+        balances[_to] = balances[_to].add(_value);
+        allowed[_from][msg.sender] = allowed[_from][msg.sender].sub(_value);
         Transfer(_from, _to, _value);
         return true;
     }
-    function grant(address _to, uint256 _grant) external {
-        require(msg.sender == address(accountRegistry));
-        balances[_to] += _grant;
-        supply += _grant;
-        Transfer(address(0), _to, _grant);
+
+    /**
+     * @dev Approve the passed address to spend the specified amount of tokens on behalf of msg.sender.
+     *
+     * Beware that changing an allowance with this method brings the risk that someone may use both the old
+     * and the new allowance by unfortunate transaction ordering. One possible solution to mitigate this
+     * race condition is to first reduce the spender's allowance to 0 and set the desired value afterwards:
+     * https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
+     * @param _spender The address which will spend the funds.
+     * @param _value The amount of tokens to be spent.
+     */
+    function approve(address _spender, uint256 _value) onlyPayloadSize(2) public returns (bool) {
+        //require user to set to zero before resetting to nonzero
+        require((_value == 0) || (allowed[msg.sender][_spender] == 0));
+
+        allowed[msg.sender][_spender] = _value;
+        Approval(msg.sender, _spender, _value);
+        return true;
     }
-    // vote5 and vote1 are available for future use
-    function vote5(address _voter, address _votee) external {
-        require(balances[_voter] >= 10);
-        require(accountRegistry.canVoteOnProposal(_voter, msg.sender));
-        balances[_voter] -= 10;
-        balances[owner] += 5;
-        balances[_votee] += 5;
-        Transfer(_voter, owner, 5);
-        Transfer(_voter, _votee, 5);
+
+    /**
+     * @dev Function to check the amount of tokens that an owner allowed to a spender.
+     * @param _owner address The address which owns the funds.
+     * @param _spender address The address which will spend the funds.
+     * @return A uint256 specifying the amount of tokens still available for the spender.
+     */
+    function allowance(address _owner, address _spender) public view returns (uint256) {
+        return allowed[_owner][_spender];
     }
-    function vote1(address _voter, address _votee) external {
-        require(balances[_voter] >= 10);
-        require(accountRegistry.canVoteOnProposal(_voter, msg.sender));
-        balances[_voter] -= 10;
-        balances[owner] += 9;
-        balances[_votee] += 1;
-        Transfer(_voter, owner, 9);
-        Transfer(_voter, _votee, 1);
+
+    /**
+     * @dev Increase the amount of tokens that an owner allowed to a spender.
+     *
+     * approve should be called when allowed[_spender] == 0. To increment
+     * allowed value is better to use this function to avoid 2 calls (and wait until
+     * the first transaction is mined)
+     * From MonolithDAO Token.sol
+     * @param _spender The address which will spend the funds.
+     * @param _addedValue The amount of tokens to increase the allowance by.
+     */
+    function increaseApproval(address _spender, uint _addedValue) onlyPayloadSize(2) public returns (bool) {
+        allowed[msg.sender][_spender] = allowed[msg.sender][_spender].add(_addedValue);
+        Approval(msg.sender, _spender, allowed[msg.sender][_spender]);
+        return true;
     }
-    function vote9(address _voter, address _votee) external {
-        require(balances[_voter] >= 10);
-        require(accountRegistry.canVoteOnProposal(_voter, msg.sender));
-        balances[_voter] -= 10;
-        balances[owner] += 1;
-        balances[_votee] += 9;
-        Transfer(_voter, owner, 1);
-        Transfer(_voter, _votee, 9);
+
+    /**
+     * @dev Decrease the amount of tokens that an owner allowed to a spender.
+     *
+     * approve should be called when allowed[_spender] == 0. To decrement
+     * allowed value is better to use this function to avoid 2 calls (and wait until
+     * the first transaction is mined)
+     * From MonolithDAO Token.sol
+     * @param _spender The address which will spend the funds.
+     * @param _subtractedValue The amount of tokens to decrease the allowance by.
+     */
+    function decreaseApproval(address _spender, uint _subtractedValue) onlyPayloadSize(2) public returns (bool) {
+        uint oldValue = allowed[msg.sender][_spender];
+        if (_subtractedValue > oldValue) {
+            allowed[msg.sender][_spender] = 0;
+        } else {
+            allowed[msg.sender][_spender] = oldValue.sub(_subtractedValue);
+        }
+        Approval(msg.sender, _spender, allowed[msg.sender][_spender]);
+        return true;
     }
-    modifier onlyOwner () {
+}
+
+contract Ownable {
+    address public owner;
+
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
+
+    /**
+     * @dev The Ownable constructor sets the original `owner` of the contract to the sender
+     * account.
+     */
+    function Ownable() public {
+        owner = msg.sender;
+    }
+
+    /**
+     * @dev Throws if called by any account other than the owner.
+     */
+    modifier onlyOwner() {
         require(msg.sender == owner);
         _;
     }
-    event Owner(address indexed owner);
-    event Registry(address indexed registry);
-    function transferOwnership(address _newOwner)
-    external onlyOwner {
-        uint256 balance = balances[owner];
-        balances[_newOwner] += balance;
-        balances[owner] = 0;
-        Transfer(owner, _newOwner, balance);
-        owner = _newOwner;
-        Owner(_newOwner);
-    }
-    function migrateAccountRegistry(AccountRegistryInterface _newAccountRegistry)
-    external onlyOwner {
-        accountRegistry = _newAccountRegistry;
-        Registry(_newAccountRegistry);
-    }
-}
-interface ProposalInterface {
-    /* uint8:
-        enum Position {
-            SKIP, // default
-            APPROVE,
-            REJECT,
-            AMEND, // == (APPROVE | REJECT)
-            LOL
-            // more to be determined by community
-        }
-    */
-    function getPosition(address _user) external view returns (uint8);
-    function argumentCount() external view returns (uint256);
-    function vote(uint256 _argumentId) external;
-    // bytes could be:
-    // utf8 string
-    // swarm hash
-    // ipfs hash
-    // and others tbd
-    event Case(bytes content);
-}
-contract ProperProposal is ProposalInterface, TokenRescue {
-    struct Argument {
-        address source;
-        uint8 position;
-        uint256 count;
-    }
-    Argument[] public arguments;
-    mapping (address => uint256) public votes;
-    Vote public constant voteToken = Vote(0x000000002647e16d9BaB9e46604D75591D289277);
 
-    function getPosition(address _user)
-    external view
-    returns (uint8) {
-        return arguments[votes[_user]].position;
-    }
-
-    function argumentCount() external view returns (uint256) {
-        return arguments.length;
-    }
-    function argumentSource(uint256 _index)
-    external view
-    returns (address) {
-        return arguments[_index].source;
-    }
-
-    function argumentPosition(uint256 _index)
-    external view
-    returns (uint8) {
-        return arguments[_index].position;
-    }
-
-    function argumentVoteCount(uint256 _index)
-    external view
-    returns (uint256) {
-        return arguments[_index].count;
-    }
-
-    function source()
-    external view
-    returns (address) {
-        return arguments[0].source;
-    }
-
-    function voteCount()
-    external view
-    returns (uint256) {
-        return -arguments[0].count;
-    }
-
-    function vote(uint256 _argumentId)
-    external {
-        address destination = arguments[_argumentId].source;
-        voteToken.vote9(msg.sender, destination);
-        arguments[votes[msg.sender]].count--;
-        arguments[
-            votes[msg.sender] = _argumentId
-        ].count++;
-    }
-
-    event Case(bytes content);
-
-    function argue(uint8 _position, bytes _text)
-    external
-    returns (uint256) {
-        address destination = arguments[0].source;
-        voteToken.vote9(msg.sender, destination);
-        uint256 argumentId = arguments.length;
-        arguments.push(Argument(msg.sender, _position, 1));
-        Case(_text);
-        arguments[votes[msg.sender]].count--;
-        votes[msg.sender] = argumentId;
-        return argumentId;
-    }
-
-    function init(address _source, bytes _resolution)
-    external {
-        assert(msg.sender == 0x000000002bb43c83eCe652d161ad0fa862129A2C);
-        arguments.push(Argument(_source, 0/*SKIP*/, 0));
-        Case(_resolution);
-    }
-}
-interface CabalInterface {
-    // TBD
-    function canonCount() external view returns (uint256);
-}
-contract AccountRegistry is AccountRegistryInterface, TokenRescue {
-    
-    uint256 constant public registrationDeposit = 1 finney;
-    uint256 constant public proposalCensorshipFee = 50 finney;
-
-    // this is the first deterministic contract address for 0x24AE90765668938351075fB450892800d9A52E39
-    address constant public burn = 0x000000003Ffc15cd9eA076d7ec40B8f516367Ca1;
-
-    Vote public constant token = Vote(0x000000002647e16d9BaB9e46604D75591D289277);
-
-    /* uint8 membership bitmap:
-     * 0 - proposer
-     * 1 - registered to vote
-     * 2 - pending proposal
-     * 3 - proposal
-     * 4 - board member
-     * 5 - pending cabal
-     * 6 - cabal
-     * 7 - board
+    /**
+     * @dev Allows the current owner to transfer control of the contract to a newOwner.
+     * @param newOwner The address to transfer ownership to.
      */
-    uint8 constant UNCONTACTED = 0;
-    uint8 constant PROPOSER = 1;
-    uint8 constant VOTER = 2;
-    uint8 constant PENDING_PROPOSAL = 4;
-    uint8 constant PROPOSAL = 8;
-    uint8 constant PENDING_CABAL = 16;
-    uint8 constant CABAL = 32;
-    uint8 constant BOARD = 64;
-    struct Account {
-        uint256 lastAccess;
-        uint8 membership;
-        address appointer;//nominated this account for BOARD
-        address denouncer;//denounced this BOARD account
-        address voucher;//nominated this account for PROPOSER
-        address devoucher;//denounced this account for PROPOSER
+    function transferOwnership(address newOwner) public onlyOwner {
+        require(newOwner != address(0));
+        OwnershipTransferred(owner, newOwner);
+        owner = newOwner;
     }
-    mapping (address => Account) accounts;
+}
 
-    function AccountRegistry()
-    public
-    {
-        accounts[0x4a6f6B9fF1fc974096f9063a45Fd12bD5B928AD1].membership = BOARD;
-        Board(0x4a6f6B9fF1fc974096f9063a45Fd12bD5B928AD1);
-        accounts[0x90Fa310397149A7a9058Ae2d56e66e707B12D3A7].membership = BOARD;
-        Board(0x90Fa310397149A7a9058Ae2d56e66e707B12D3A7);
-        accounts[0x424a6e871E8cea93791253B47291193637D6966a].membership = BOARD;
-        Board(0x424a6e871E8cea93791253B47291193637D6966a);
-        accounts[0xA4caDe6ecbed8f75F6fD50B8be92feb144400CC4].membership = BOARD;
-        Board(0xA4caDe6ecbed8f75F6fD50B8be92feb144400CC4);
+/**
+ * @title MintableToken token
+ */
+contract MintableToken is Ownable, StandardToken {
+
+    event Mint(address indexed to, uint256 amount);
+    event MintFinished();
+
+    bool public mintingFinished = false;
+
+    address public saleAgent;
+
+    modifier canMint() {
+        require(!mintingFinished);
+        _;
     }
 
-    event Voter(address indexed voter);
-    event Deregistered(address indexed voter);
-    event Nominated(address indexed board, string endorsement);
-    event Board(address indexed board);
-    event Denounced(address indexed board, string reason);
-    event Revoked(address indexed board);
-    event Proposal(ProposalInterface indexed proposal);
-    event Cabal(CabalInterface indexed cabal);
-    event BannedProposal(ProposalInterface indexed proposal, string reason);
-    event Vouch(address indexed proposer, string vouch);
-    event Proposer(address indexed proposer);
-    event Devouch(address indexed proposer, string vouch);
-    event Shutdown(address indexed proposer);
-
-    // To register a Cabal, you must
-    // - implement CabalInterface
-    // - open-source your Cabal on Etherscan or equivalent
-    function registerCabal(CabalInterface _cabal)
-    external {
-        Account storage account = accounts[_cabal];
-        require(account.membership & (PENDING_CABAL | CABAL) == 0);
-        account.membership |= PENDING_CABAL;
+    modifier onlySaleAgent() {
+        require(msg.sender == saleAgent);
+        _;
     }
 
-    function confirmCabal(CabalInterface _cabal)
-    external {
-        require(accounts[msg.sender].membership & BOARD != 0);
-        Account storage account = accounts[_cabal];
-        require(account.membership & PENDING_CABAL != 0);
-        account.membership ^= (CABAL | PENDING_CABAL);
-        Cabal(_cabal);
+    function setSaleAgent(address _saleAgent) onlyOwner public {
+        require(_saleAgent != address(0));
+        saleAgent = _saleAgent;
     }
 
-    function register()
-    external payable
-    {
-        require(msg.value == registrationDeposit);
-        Account storage account = accounts[msg.sender];
-        require(account.membership & VOTER == 0);
-        account.lastAccess = now;
-        account.membership |= VOTER;
-        token.grant(msg.sender, 40);
-        Voter(msg.sender);
+    /**
+     * @dev Function to mint tokens
+     * @param _to The address that will receive the minted tokens.
+     * @param _amount The amount of tokens to mint.
+     * @return A boolean that indicates if the operation was successful.
+     */
+    function mint(address _to, uint256 _amount) onlySaleAgent canMint public returns (bool) {
+        totalSupply = totalSupply.add(_amount);
+        balances[_to] = balances[_to].add(_amount);
+        Mint(_to, _amount);
+        Transfer(address(0), _to, _amount);
+        return true;
     }
 
-    // smart contracts must implement the fallback function in order to deregister
-    function deregister()
-    external
-    {
-        Account storage account = accounts[msg.sender];
-        require(account.membership & VOTER != 0);
-        require(account.lastAccess + 7 days <= now);
-        account.membership ^= VOTER;
-        account.lastAccess = 0;
-        // the MANDATORY transfer keeps population() meaningful
-        msg.sender.transfer(registrationDeposit);
-        Deregistered(msg.sender);
+    /**
+     * @dev Function to stop minting new tokens.
+     * @return True if the operation was successful.
+     */
+    function finishMinting() onlySaleAgent canMint public returns (bool) {
+        mintingFinished = true;
+        MintFinished();
+        return true;
+    }
+}
+
+contract Token is MintableToken {
+    string public constant name = "TOKPIE";
+    string public constant symbol = "TKP";
+    uint8 public constant decimals = 18;
+}
+
+/**
+ * @title Pausable
+ * @dev Base contract which allows children to implement an emergency stop mechanism.
+ */
+contract Pausable is Ownable {
+    event Pause();
+    event Unpause();
+
+    bool public paused = false;
+
+
+    /**
+     * @dev Modifier to make a function callable only when the contract is not paused.
+     */
+    modifier whenNotPaused() {
+        require(!paused);
+        _;
     }
 
-    function population()
-    external view
-    returns (uint256)
-    {
-        return this.balance / 1 finney;
+    /**
+     * @dev Modifier to make a function callable only when the contract is paused.
+     */
+    modifier whenPaused() {
+        require(paused);
+        _;
     }
 
-    function deregistrationDate()
-    external view
-    returns (uint256)
-    {
-        return accounts[msg.sender].lastAccess + 7 days;
+    /**
+     * @dev called by the owner to pause, triggers stopped state
+     */
+    function pause() onlyOwner whenNotPaused public {
+        paused = true;
+        Pause();
     }
 
-    // always true for deregistered accounts
-    function canDeregister(address _voter)
-    external view
-    returns (bool)
-    {
-        return accounts[_voter].lastAccess + 7 days <= now;
+    /**
+     * @dev called by the owner to unpause, returns to normal state
+     */
+    function unpause() onlyOwner whenPaused public {
+        paused = false;
+        Unpause();
+    }
+}
+
+/**
+ * @title WhitelistedCrowdsale
+ * @dev Crowdsale in which only whitelisted users can contribute.
+ */
+contract WhitelistedCrowdsale is Ownable {
+
+    mapping(address => bool) public whitelist;
+
+    /**
+     * @dev Reverts if beneficiary is not whitelisted. Can be used when extending this contract.
+     */
+    modifier isWhitelisted(address _beneficiary) {
+        require(whitelist[_beneficiary]);
+        _;
     }
 
-    function canVoteOnProposal(address _voter, address _proposal)
-    external view
-    returns (bool)
-    {
-        return accounts[_voter].membership & VOTER != 0
-            && accounts[_proposal].membership & PROPOSAL != 0;
+    /**
+     * @dev Adds single address to whitelist.
+     * @param _beneficiary Address to be added to the whitelist
+     */
+    function addToWhitelist(address _beneficiary) external onlyOwner {
+        whitelist[_beneficiary] = true;
     }
 
-    function canVote(address _voter)
-    external view
-    returns (bool)
-    {
-        return accounts[_voter].membership & VOTER != 0;
-    }
-
-    function isProposal(address _proposal)
-    external view
-    returns (bool)
-    {
-        return accounts[_proposal].membership & PROPOSAL != 0;
-    }
-
-    function isPendingProposal(address _proposal)
-    external view
-    returns (bool)
-    {
-        return accounts[_proposal].membership & PENDING_PROPOSAL != 0;
-    }
-
-    function isPendingCabal(address _account)
-    external view
-    returns (bool)
-    {
-        return accounts[_account].membership & PENDING_CABAL != 0;
-    }
-
-    function isCabal(address _account)
-    external view
-    returns (bool)
-    {
-        return accounts[_account].membership & CABAL != 0;
-    }
-
-    // under no condition should you let anyone control two BOARD accounts
-    function appoint(address _board, string _vouch)
-    external {
-        require(accounts[msg.sender].membership & BOARD != 0);
-        Account storage candidate = accounts[_board];
-        if (candidate.membership & BOARD != 0) {
-            return;
+    /**
+     * @dev Adds list of addresses to whitelist. Not overloaded due to limitations with truffle testing.
+     * @param _beneficiaries Addresses to be added to the whitelist
+     */
+    function addManyToWhitelist(address[] _beneficiaries) external onlyOwner {
+        for (uint256 i = 0; i < _beneficiaries.length; i++) {
+            whitelist[_beneficiaries[i]] = true;
         }
-        address appt = candidate.appointer;
-        if (accounts[appt].membership & BOARD == 0) {
-            candidate.appointer = msg.sender;
-            Nominated(_board, _vouch);
-            return;
-        }
-        if (appt == msg.sender) {
-            return;
-        }
-        Nominated(_board, _vouch);
-        candidate.membership |= BOARD;
-        Board(_board);
+    }
+}
+
+/**
+ * @title FinalizableCrowdsale
+ * @dev Extension of Crowdsale where an owner can do extra work
+ * after finishing.
+ */
+contract FinalizableCrowdsale is Pausable {
+    using SafeMath for uint256;
+
+    bool public isFinalized = false;
+
+    event Finalized();
+
+    /**
+     * @dev Must be called after crowdsale ends, to do some extra finalization
+     * work. Calls the contract's finalization function.
+     */
+    function finalize() onlyOwner public {
+        require(!isFinalized);
+
+        finalization();
+        Finalized();
+
+        isFinalized = true;
     }
 
-    function denounce(address _board, string _reason)
-    external {
-        require(accounts[msg.sender].membership & BOARD != 0);
-        Account storage board = accounts[_board];
-        if (board.membership & BOARD == 0) {
-            return;
-        }
-        address dncr = board.denouncer;
-        if (accounts[dncr].membership & BOARD == 0) {
-            board.denouncer = msg.sender;
-            Denounced(_board, _reason);
-            return;
-        }
-        if (dncr == msg.sender) {
-            return;
-        }
-        Denounced(_board, _reason);
-        board.membership ^= BOARD;
-        Revoked(_board);
+    /**
+     * @dev Can be overridden to add finalization logic. The overriding function
+     * should call super.finalization() to ensure the chain of finalization is
+     * executed entirely.
+     */
+    function finalization() internal;
+}
+
+/**
+ * @title RefundVault
+ * @dev This contract is used for storing funds while a crowdsale
+ * is in progress. Supports refunding the money if crowdsale fails,
+ * and forwarding it if crowdsale is successful.
+ */
+contract RefundVault is Ownable {
+    using SafeMath for uint256;
+
+    enum State {Active, Refunding, Closed}
+
+    mapping(address => uint256) public deposited;
+    address public wallet;
+    State public state;
+
+    event Closed();
+    event RefundsEnabled();
+    event Refunded(address indexed beneficiary, uint256 weiAmount);
+
+    /**
+     * @param _wallet Vault address
+     */
+    function RefundVault(address _wallet) public {
+        require(_wallet != address(0));
+        wallet = _wallet;
+        state = State.Active;
     }
 
-    function vouchProposer(address _proposer, string _vouch)
-    external {
-        require(accounts[msg.sender].membership & BOARD != 0);
-        Account storage candidate = accounts[_proposer];
-        if (candidate.membership & PROPOSER != 0) {
-            return;
-        }
-        address appt = candidate.voucher;
-        if (accounts[appt].membership & BOARD == 0) {
-            candidate.voucher = msg.sender;
-            Vouch(_proposer, _vouch);
-            return;
-        }
-        if (appt == msg.sender) {
-            return;
-        }
-        Vouch(_proposer, _vouch);
-        candidate.membership |= PROPOSER;
-        Proposer(_proposer);
+    /**
+     * @param investor Investor address
+     */
+    function deposit(address investor) onlyOwner public payable {
+        require(state == State.Active);
+        deposited[investor] = deposited[investor].add(msg.value);
     }
 
-    function devouchProposer(address _proposer, string _devouch)
-    external {
-        require(accounts[msg.sender].membership & BOARD != 0);
-        Account storage candidate = accounts[_proposer];
-        if (candidate.membership & PROPOSER == 0) {
-            return;
-        }
-        address appt = candidate.devoucher;
-        if (accounts[appt].membership & BOARD == 0) {
-            candidate.devoucher = msg.sender;
-            Devouch(_proposer, _devouch);
-            return;
-        }
-        if (appt == msg.sender) {
-            return;
-        }
-        Devouch(_proposer, _devouch);
-        candidate.membership &= ~PROPOSER;
-        Shutdown(_proposer);
+    function close() onlyOwner public {
+        require(state == State.Active);
+        state = State.Closed;
+        Closed();
+        wallet.transfer(this.balance);
     }
 
-    function proposeProper(bytes _resolution)
-    external
-    returns (ProposalInterface)
-    {
-        ProperProposal proposal = new ProperProposal();
-        proposal.init(msg.sender, _resolution);
-        accounts[proposal].membership |= PROPOSAL;
-        Proposal(proposal);
-        return proposal;
+    function enableRefunds() onlyOwner public {
+        require(state == State.Active);
+        state = State.Refunding;
+        RefundsEnabled();
     }
 
-    function proposeProxy(bytes _resolution)
-    external
-    returns (ProposalInterface)
-    {
-        ProperProposal proposal;
-        bytes memory clone = hex"600034603b57602f80600f833981f3600036818037808036816f5fbe2cc9b1b684ec445caf176042348e5af415602c573d81803e3d81f35b80fd";
-        assembly {
-            let data := add(clone, 0x20)
-            proposal := create(0, data, 58)
-        }
-        proposal.init(msg.sender, _resolution);
-        accounts[proposal].membership |= PROPOSAL;
-        Proposal(proposal);
-        return proposal;
+    /**
+     * @param investor Investor address
+     */
+    function refund(address investor) public {
+        require(state == State.Refunding);
+        uint256 depositedValue = deposited[investor];
+        deposited[investor] = 0;
+        investor.transfer(depositedValue);
+        Refunded(investor, depositedValue);
+    }
+}
+
+contract preICO is FinalizableCrowdsale, WhitelistedCrowdsale {
+    Token public token;
+
+    // May 01, 2018 @ UTC 0:01
+    uint256 public startDate;
+
+    // May 14, 2018 @ UTC 23:59
+    uint256 public endDate;
+
+    // amount of raised money in wei
+    uint256 public weiRaised;
+
+    // how many token units a buyer gets per wei
+    uint256 public constant rate = 1920;
+
+    uint256 public constant softCap = 500 * (1 ether);
+
+    uint256 public constant hardCap = 1000 * (1 ether);
+
+    // refund vault used to hold funds while crowdsale is running
+    RefundVault public vault;
+
+    /**
+     * event for token purchase logging
+     * @param purchaser who paid for the tokens
+     * @param beneficiary who got the tokens
+     * @param value weis paid for purchase
+     * @param amount amount of tokens purchased
+     */
+    event TokenPurchase(address indexed purchaser, address indexed beneficiary, uint256 value, uint256 amount);
+
+    /**
+     * @dev _wallet where collect funds during crowdsale
+     * @dev _startDate should be 1525132860
+     * @dev _endDate should be 1526342340
+     * @dev _maxEtherPerInvestor should be 10 ether
+     */
+    function preICO(address _token, address _wallet, uint256 _startDate, uint256 _endDate) public {
+        require(_token != address(0) && _wallet != address(0));
+        require(_endDate > _startDate);
+        startDate = _startDate;
+        endDate = _endDate;
+        token = Token(_token);
+        vault = new RefundVault(_wallet);
     }
 
-    function sudoPropose(ProposalInterface _proposal)
-    external {
-        require(accounts[msg.sender].membership & PROPOSER != 0);
-        uint8 membership = accounts[_proposal].membership;
-        require(membership == 0);
-        accounts[_proposal].membership = PROPOSAL;
-        Proposal(_proposal);
+    /**
+     * @dev Investors can claim refunds here if crowdsale is unsuccessful
+     */
+    function claimRefund() public {
+        require(isFinalized);
+        require(!goalReached());
+
+        vault.refund(msg.sender);
     }
 
-    // To submit an outside proposal contract, you must:
-    // - ensure it conforms to ProposalInterface
-    // - ensure it properly transfers the VOTE token, calling Vote.voteX
-    // - open-source it using Etherscan or equivalent
-    function proposeExternal(ProposalInterface _proposal)
-    external
-    {
-        Account storage account = accounts[_proposal];
-        require(account.membership & (PENDING_PROPOSAL | PROPOSAL) == 0);
-        account.membership |= PENDING_PROPOSAL;
+    /**
+     * @dev Checks whether funding goal was reached.
+     * @return Whether funding goal was reached
+     */
+    function goalReached() public view returns (bool) {
+        return weiRaised >= softCap;
     }
 
-    function confirmProposal(ProposalInterface _proposal)
-    external
-    {
-        require(accounts[msg.sender].membership & BOARD != 0);
-        Account storage account = accounts[_proposal];
-        require(account.membership & PENDING_PROPOSAL != 0);
-        account.membership ^= (PROPOSAL | PENDING_PROPOSAL);
-        Proposal(_proposal);
-    }
-
-    // bans prevent accounts from voting through this proposal
-    // this should only be used to stop a proposal that is abusing the VOTE token
-    // the burn is to penalize bans, so that they cannot suppress ideas
-    function banProposal(ProposalInterface _proposal, string _reason)
-    external payable
-    {
-        require(msg.value == proposalCensorshipFee);
-        require(accounts[msg.sender].membership & BOARD != 0);
-        Account storage account = accounts[_proposal];
-        require(account.membership & PROPOSAL != 0);
-        account.membership &= ~PROPOSAL;
-        burn.transfer(proposalCensorshipFee);
-        BannedProposal(_proposal, _reason);
-    }
-
-    // board members reserve the right to reject outside proposals for any reason
-    function rejectProposal(ProposalInterface _proposal)
-    external
-    {
-        require(accounts[msg.sender].membership & BOARD != 0);
-        Account storage account = accounts[_proposal];
-        require(account.membership & PENDING_PROPOSAL != 0);
-        account.membership &= PENDING_PROPOSAL;
-    }
-
-    // this code lives here instead of in the token so that it can be upgraded with account registry migration
-    function faucet()
-    external {
-        Account storage account = accounts[msg.sender];
-        require(account.membership & VOTER != 0);
-        uint256 lastAccess = account.lastAccess;
-        uint256 grant = (now - lastAccess) / 72 minutes;
-        if (grant > 40) {
-            grant = 40;
-            account.lastAccess = now;
+    /**
+     * @dev vault finalization task, called when owner calls finalize()
+     */
+    function finalization() internal {
+        require(hasEnded());
+        if (goalReached()) {
+            vault.close();
         } else {
-            account.lastAccess = lastAccess + grant * 72 minutes;
+            vault.enableRefunds();
         }
-        token.grant(msg.sender, grant);
     }
 
-    function availableFaucet(address _account)
-    external view
-    returns (uint256) {
-        uint256 grant = (now - accounts[_account].lastAccess) / 72 minutes;
-        if (grant > 40) {
-            grant = 40;
+    // fallback function can be used to buy tokens
+    function() external payable {
+        buyTokens(msg.sender);
+    }
+
+    // low level token purchase function
+    function buyTokens(address beneficiary) whenNotPaused isWhitelisted(beneficiary) isWhitelisted(msg.sender) public payable {
+        require(beneficiary != address(0));
+        require(validPurchase());
+        require(!hasEnded());
+
+        uint256 weiAmount = msg.value;
+
+        // calculate token amount to be created
+        uint256 tokens = weiAmount.mul(rate);
+
+        // Minimum contribution level in TKP tokens for each investor = 100 TKP
+        require(tokens >= 100 * (10 ** 18));
+
+        // update state
+        weiRaised = weiRaised.add(weiAmount);
+
+        token.mint(beneficiary, tokens);
+        TokenPurchase(msg.sender, beneficiary, weiAmount, tokens);
+        forwardFunds();
+    }
+
+    // send ether to the fund collection wallet
+    function forwardFunds() internal {
+        vault.deposit.value(msg.value)(msg.sender);
+    }
+
+    // @return true if the transaction can buy tokens
+    function validPurchase() internal view returns (bool) {
+        return !isFinalized && now >= startDate && msg.value != 0;
+    }
+
+    // @return true if crowdsale event has ended
+    function hasEnded() public view returns (bool) {
+        return (now > endDate || weiRaised >= hardCap);
+    }
+}
+
+contract ICO is Pausable, WhitelistedCrowdsale {
+    using SafeMath for uint256;
+
+    Token public token;
+
+    // June 01, 2018 @ UTC 0:01
+    uint256 public startDate;
+
+    // July 05, 2018 on UTC 23:59
+    uint256 public endDate;
+
+    uint256 public hardCap;
+
+    // amount of raised money in wei
+    uint256 public weiRaised;
+
+    address public wallet;
+
+    mapping(address => uint256) public deposited;
+
+    /**
+     * event for token purchase logging
+     * @param purchaser who paid for the tokens
+     * @param beneficiary who got the tokens
+     * @param value weis paid for purchase
+     * @param amount amount of tokens purchased
+     */
+    event TokenPurchase(address indexed purchaser, address indexed beneficiary, uint256 value, uint256 amount);
+
+    /**
+     * @dev _wallet where collect funds during crowdsale
+     * @dev _startDate should be 1527811260
+     * @dev _endDate should be 1530835140
+     * @dev _maxEtherPerInvestor should be 10 ether
+     * @dev _hardCap should be 8700 ether
+     */
+    function ICO(address _token, address _wallet, uint256 _startDate, uint256 _endDate, uint256 _hardCap) public {
+        require(_token != address(0) && _wallet != address(0));
+        require(_endDate > _startDate);
+        require(_hardCap > 0);
+        startDate = _startDate;
+        endDate = _endDate;
+        hardCap = _hardCap;
+        token = Token(_token);
+        wallet = _wallet;
+    }
+
+    function claimFunds() onlyOwner public {
+        require(hasEnded());
+        wallet.transfer(this.balance);
+    }
+
+    function getRate() public view returns (uint256) {
+        if (now < startDate || hasEnded()) return 0;
+
+        // Period: from June 01, 2018 @ UTC 0:01 to June 7, 2018 @ UTC 23:59; Price: 1 ETH = 1840 TKP
+        if (now >= startDate && now < startDate + 604680) return 1840;
+        // Period: from June 08, 2018 @ UTC 0:00 to June 14, 2018 @ UTC 23:59; Price: 1 ETH = 1760 TKP
+        if (now >= startDate + 604680 && now < startDate + 1209480) return 1760;
+        // Period: from June 15, 2018 @ UTC 0:00 to June 21, 2018 @ UTC 23:59; Price: 1 ETH = 1680 TKP
+        if (now >= startDate + 1209480 && now < startDate + 1814280) return 1680;
+        // Period: from June 22, 2018 @ UTC 0:00 to June 28, 2018 @ UTC 23:59; Price: 1 ETH = 1648 TKP
+        if (now >= startDate + 1814280 && now < startDate + 2419080) return 1648;
+        // Period: from June 29, 2018 @ UTC 0:00 to July 5, 2018 @ UTC 23:59; Price: 1 ETH = 1600 TKP
+        if (now >= startDate + 2419080) return 1600;
+    }
+
+    // fallback function can be used to buy tokens
+    function() external payable {
+        buyTokens(msg.sender);
+    }
+
+    // low level token purchase function
+    function buyTokens(address beneficiary) whenNotPaused isWhitelisted(beneficiary) isWhitelisted(msg.sender) public payable {
+        require(beneficiary != address(0));
+        require(validPurchase());
+        require(!hasEnded());
+
+        uint256 weiAmount = msg.value;
+
+        // calculate token amount to be created
+        uint256 tokens = weiAmount.mul(getRate());
+
+        // Minimum contribution level in TKP tokens for each investor = 100 TKP
+        require(tokens >= 100 * (10 ** 18));
+
+        // update state
+        weiRaised = weiRaised.add(weiAmount);
+
+        token.mint(beneficiary, tokens);
+        TokenPurchase(msg.sender, beneficiary, weiAmount, tokens);
+    }
+
+    // @return true if the transaction can buy tokens
+    function validPurchase() internal view returns (bool) {
+        return now >= startDate && msg.value != 0;
+    }
+
+    // @return true if crowdsale event has ended
+    function hasEnded() public view returns (bool) {
+        return (now > endDate || weiRaised >= hardCap);
+    }
+}
+
+contract postICO is Ownable {
+    using SafeMath for uint256;
+
+    Token public token;
+
+    address public walletE;
+    address public walletB;
+    address public walletC;
+    address public walletF;
+    address public walletG;
+
+    // 05.07.18 @ UTC 23:59
+    uint256 public endICODate;
+
+    bool public finished = false;
+
+    uint256 public FTST;
+
+    // Save complete of transfers (due to schedule) to these wallets 
+    mapping(uint8 => bool) completedE;
+    mapping(uint8 => bool) completedBC;
+
+    uint256 public paymentSizeE;
+    uint256 public paymentSizeB;
+    uint256 public paymentSizeC;
+
+    /**
+     * @dev _endICODate should be 1530835140
+     */
+    function postICO(
+        address _token,
+        address _walletE,
+        address _walletB,
+        address _walletC,
+        address _walletF,
+        address _walletG,
+        uint256 _endICODate
+    ) public {
+        require(_token != address(0));
+        require(_walletE != address(0));
+        require(_walletB != address(0));
+        require(_walletC != address(0));
+        require(_walletF != address(0));
+        require(_walletG != address(0));
+        require(_endICODate >= now);
+
+        token = Token(_token);
+        endICODate = _endICODate;
+
+        walletE = _walletE;
+        walletB = _walletB;
+        walletC = _walletC;
+        walletF = _walletF;
+        walletG = _walletG;
+    }
+
+    function finish() onlyOwner public {
+        require(now > endICODate);
+        require(!finished);
+        require(token.saleAgent() == address(this));
+
+        FTST = token.totalSupply().mul(100).div(65);
+
+        // post ICO token allocation: 35% of final total supply of tokens (FTST) will be distributed to the wallets E, B, C, F, G due to the schedule described below. Where FTST = the number of tokens sold during crowdsale x 100 / 65.
+        // Growth reserve: 21% (4-years lock). Distribute 2.625% of the final total supply of tokens (FTST*2625/100000) 8 (eight) times every half a year during 4 (four) years after the endICODate to the wallet [E].
+        // hold this tokens on postICO contract
+        paymentSizeE = FTST.mul(2625).div(100000);
+        uint256 tokensE = paymentSizeE.mul(8);
+        token.mint(this, tokensE);
+
+        // Team: 9.6% (2-years lock).
+        // Distribute 0.25% of final total supply of tokens (FTST*25/10000) 4 (four) times every half a year during 2 (two) years after endICODate to the wallet [B].
+        // hold this tokens on postICO contract
+        paymentSizeB = FTST.mul(25).div(10000);
+        uint256 tokensB = paymentSizeB.mul(4);
+        token.mint(this, tokensB);
+
+        // Distribute 2.15% of final total supply of tokens (FTST*215/10000) 4 (four) times every half a year during 2 (two) years after endICODate to the wallet [C]. 
+        // hold this tokens on postICO contract
+        paymentSizeC = FTST.mul(215).div(10000);
+        uint256 tokensC = paymentSizeC.mul(4);
+        token.mint(this, tokensC);
+
+        // Angel investors: 2%. Distribute 2% of final total supply of tokens (FTST*2/100) after endICODate to the wallet [F].
+        uint256 tokensF = FTST.mul(2).div(100);
+        token.mint(walletF, tokensF);
+
+        // Referral program 1,3% + Bounty program: 1,1%. Distribute 2,4% of final total supply of tokens (FTST*24/1000) after endICODate to the wallet [G]. 
+        uint256 tokensG = FTST.mul(24).div(1000);
+        token.mint(walletG, tokensG);
+
+        token.finishMinting();
+        finished = true;
+    }
+
+    function claimTokensE(uint8 order) onlyOwner public {
+        require(finished);
+        require(order >= 1 && order <= 8);
+        require(!completedE[order]);
+
+        // On January 03, 2019 @ UTC 23:59 = FTST*2625/100000 (2.625% of final total supply of tokens) to the wallet [E].
+        if (order == 1) {
+            // Thursday, 3 January 2019 г., 23:59:00
+            require(now >= endICODate + 15724800);
+            token.transfer(walletE, paymentSizeE);
+            completedE[order] = true;
         }
-        return grant;
+        // On July 05, 2019 @ UTC 23:59 = FTST*2625/100000 (2.625% of final total supply of tokens) to the wallet [E].
+        if (order == 2) {
+            // Friday, 5 July 2019 г., 23:59:00
+            require(now >= endICODate + 31536000);
+            token.transfer(walletE, paymentSizeE);
+            completedE[order] = true;
+        }
+        // On January 03, 2020 @ UTC 23:59 = FTST*2625/100000 (2.625% of final total supply of tokens) to the wallet [E].
+        if (order == 3) {
+            // Friday, 3 January 2020 г., 23:59:00
+            require(now >= endICODate + 47260800);
+            token.transfer(walletE, paymentSizeE);
+            completedE[order] = true;
+        }
+        // On July 04, 2020 @ UTC 23:59 = FTST*2625/100000 (2.625% of final total supply of tokens) to the wallet [E].
+        if (order == 4) {
+            // Saturday, 4 July 2020 г., 23:59:00
+            require(now >= endICODate + 63072000);
+            token.transfer(walletE, paymentSizeE);
+            completedE[order] = true;
+        }
+        // On January 02, 2021 @ UTC 23:59 = FTST*2625/100000 (2.625% of final total supply of tokens) to the wallet [E].
+        if (order == 5) {
+            // Saturday, 2 January 2021 г., 23:59:00
+            require(now >= endICODate + 78796800);
+            token.transfer(walletE, paymentSizeE);
+            completedE[order] = true;
+        }
+        // On July 04, 2021 @ UTC 23:59 = FTST*2625/100000 (2.625% of final total supply of tokens) to the wallet [E].
+        if (order == 6) {
+            // Sunday, 4 July 2021 г., 23:59:00
+            require(now >= endICODate + 94608000);
+            token.transfer(walletE, paymentSizeE);
+            completedE[order] = true;
+        }
+        // On January 02, 2022 @ UTC 23:59 = FTST*2625/100000 (2.625% of final total supply of tokens) to the wallet [E].
+        if (order == 7) {
+            // Sunday, 2 January 2022 г., 23:59:00
+            require(now >= endICODate + 110332800);
+            token.transfer(walletE, paymentSizeE);
+            completedE[order] = true;
+        }
+        // On July 04, 2022@ UTC 23:59 = FTST*2625/100000 (2.625% of final total supply of tokens) to the wallet [E].
+        if (order == 8) {
+            // Monday, 4 July 2022 г., 23:59:00
+            require(now >= endICODate + 126144000);
+            token.transfer(walletE, paymentSizeE);
+            completedE[order] = true;
+        }
+    }
+
+    function claimTokensBC(uint8 order) onlyOwner public {
+        require(finished);
+        require(order >= 1 && order <= 4);
+        require(!completedBC[order]);
+
+        // On January 03, 2019 @ UTC 23:59 = FTST*25/10000 (0.25% of final total supply of tokens) to the wallet [B] and FTST*215/10000 (2.15% of final total supply of tokens) to the wallet [C].
+        if (order == 1) {
+            // Thursday, 3 January 2019 г., 23:59:00
+            require(now >= endICODate + 15724800);
+            token.transfer(walletB, paymentSizeB);
+            token.transfer(walletC, paymentSizeC);
+            completedBC[order] = true;
+        }
+        // On July 05, 2019 @ UTC 23:59 = FTST*25/10000 (0.25% of final total supply of tokens) to the wallet [B] and FTST*215/10000 (2.15% of final total supply of tokens) to the wallet [C].
+        if (order == 2) {
+            // Friday, 5 July 2019 г., 23:59:00
+            require(now >= endICODate + 31536000);
+            token.transfer(walletB, paymentSizeB);
+            token.transfer(walletC, paymentSizeC);
+            completedBC[order] = true;
+        }
+        // On January 03, 2020 @ UTC 23:59 = FTST*25/10000 (0.25% of final total supply of tokens) to the wallet [B] and FTST*215/10000 (2.15% of final total supply of tokens) to the wallet [C].
+        if (order == 3) {
+            // Friday, 3 January 2020 г., 23:59:00
+            require(now >= endICODate + 47260800);
+            token.transfer(walletB, paymentSizeB);
+            token.transfer(walletC, paymentSizeC);
+            completedBC[order] = true;
+        }
+        // On July 04, 2020 @ UTC 23:59 = FTST*25/10000 (0.25% of final total supply of tokens) to the wallet [B] and FTST*215/10000 (2.15% of final total supply of tokens) to the wallet [C].
+        if (order == 4) {
+            // Saturday, 4 July 2020 г., 23:59:00
+            require(now >= endICODate + 63072000);
+            token.transfer(walletB, paymentSizeB);
+            token.transfer(walletC, paymentSizeC);
+            completedBC[order] = true;
+        }
+    }
+}
+
+contract Controller is Ownable {
+    Token public token;
+    preICO public pre;
+    ICO public ico;
+    postICO public post;
+
+    enum State {NONE, PRE_ICO, ICO, POST}
+
+    State public state;
+
+    function Controller(address _token, address _preICO, address _ico, address _postICO) public {
+        require(_token != address(0x0));
+        token = Token(_token);
+        pre = preICO(_preICO);
+        ico = ICO(_ico);
+        post = postICO(_postICO);
+
+        require(post.endICODate() == ico.endDate());
+
+        require(pre.weiRaised() == 0);
+        require(ico.weiRaised() == 0);
+
+        require(token.totalSupply() == 0);
+        state = State.NONE;
+    }
+
+    function startPreICO() onlyOwner public {
+        require(state == State.NONE);
+        require(token.owner() == address(this));
+        token.setSaleAgent(pre);
+        state = State.PRE_ICO;
+    }
+
+    function startICO() onlyOwner public {
+        require(now > pre.endDate());
+        require(state == State.PRE_ICO);
+        require(token.owner() == address(this));
+        token.setSaleAgent(ico);
+        state = State.ICO;
+    }
+
+    function startPostICO() onlyOwner public {
+        require(now > ico.endDate());
+        require(state == State.ICO);
+        require(token.owner() == address(this));
+        token.setSaleAgent(post);
+        state = State.POST;
     }
 }
